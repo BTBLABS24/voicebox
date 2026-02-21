@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voicebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+    .recording-pulse::before { content: ''; position: absolute; inset: -4px; border-radius: 9999px; background: #ef4444; animation: pulse-ring 1s ease-out infinite; }
+    audio::-webkit-media-controls-panel { background: #1f2937; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-8">
+    <header class="mb-8 text-center">
+      <h1 class="text-3xl font-bold text-white">Voicebox</h1>
+      <p class="text-gray-400 mt-1">Voice cloning powered by Qwen3-TTS</p>
+      <div id="server-status" class="mt-2 text-sm text-gray-500"></div>
+    </header>
+
+    <!-- Step 1: Upload Audio -->
+    <section id="step-1" class="mb-6">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
+        <h2 class="text-lg font-semibold">Upload or Record Audio</h2>
+      </div>
+      <div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+        <div class="flex flex-col gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-2">Upload audio file</label>
+            <input type="file" id="audio-file" accept="audio/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer hover:file:bg-blue-500">
+          </div>
+          <div class="flex items-center gap-2 text-gray-500 text-sm">
+            <div class="flex-1 h-px bg-gray-800"></div>
+            <span>or</span>
+            <div class="flex-1 h-px bg-gray-800"></div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="record-btn" onclick="toggleRecording()" class="relative px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm font-medium transition">
+              Record from microphone
+            </button>
+            <span id="record-timer" class="text-sm text-gray-500 hidden">0:00</span>
+          </div>
+          <div id="audio-preview" class="hidden">
+            <audio id="audio-player" controls class="w-full rounded"></audio>
+          </div>
+          <button id="next-1" onclick="goToStep2()" disabled class="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition">
+            Transcribe Audio
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Transcribe -->
+    <section id="step-2" class="mb-6 hidden">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">2</span>
+        <h2 class="text-lg font-semibold">Review Transcription</h2>
+      </div>
+      <div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+        <div id="transcribe-loading" class="hidden text-center py-6">
+          <div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-sm text-gray-400 mt-2" id="transcribe-status">Transcribing audio...</p>
+        </div>
+        <div id="transcribe-result" class="hidden flex flex-col gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-2">Edit transcription if needed</label>
+            <textarea id="transcription-text" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded p-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"></textarea>
+          </div>
+          <button onclick="goToStep3()" class="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium transition">
+            Approve &amp; Create Voice Profile
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: Create Profile -->
+    <section id="step-3" class="mb-6 hidden">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">3</span>
+        <h2 class="text-lg font-semibold">Create Voice Profile</h2>
+      </div>
+      <div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+        <div id="profile-loading" class="hidden text-center py-6">
+          <div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-sm text-gray-400 mt-2">Creating voice profile...</p>
+        </div>
+        <div id="profile-form" class="flex flex-col gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Profile name</label>
+            <input type="text" id="profile-name" placeholder="e.g. My Voice" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Language</label>
+            <select id="profile-language" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="en">English</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="de">German</option>
+              <option value="fr">French</option>
+              <option value="ru">Russian</option>
+              <option value="pt">Portuguese</option>
+              <option value="es">Spanish</option>
+              <option value="it">Italian</option>
+            </select>
+          </div>
+          <button onclick="createProfile()" class="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium transition">
+            Create Profile
+          </button>
+        </div>
+        <div id="profile-success" class="hidden text-center py-4">
+          <p class="text-green-400 font-medium">Voice profile created!</p>
+          <p class="text-sm text-gray-400 mt-1" id="profile-success-name"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 4: Generate Speech -->
+    <section id="step-4" class="mb-6 hidden">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">4</span>
+        <h2 class="text-lg font-semibold">Generate Speech</h2>
+      </div>
+      <div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+        <div class="flex flex-col gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Voice profile</label>
+            <select id="gen-profile" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"></select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Text to speak</label>
+            <textarea id="gen-text" rows="4" placeholder="Type what you want the voice to say..." class="w-full bg-gray-800 border border-gray-700 rounded p-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Language</label>
+              <select id="gen-language" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="en">English</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="de">German</option>
+                <option value="fr">French</option>
+                <option value="ru">Russian</option>
+                <option value="pt">Portuguese</option>
+                <option value="es">Spanish</option>
+                <option value="it">Italian</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Model</label>
+              <select id="gen-model" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="1.7B">1.7B (higher quality)</option>
+                <option value="0.6B">0.6B (faster)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Instruction (optional)</label>
+            <input type="text" id="gen-instruct" placeholder="e.g. speak slowly, whisper, excited tone..." class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <button id="gen-btn" onclick="generate()" class="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition">
+            Generate Speech
+          </button>
+          <div id="gen-loading" class="hidden text-center py-4">
+            <div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-sm text-gray-400 mt-2" id="gen-status">Generating speech...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 5: Result -->
+    <section id="step-5" class="mb-6 hidden">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-600 text-white text-sm font-bold">5</span>
+        <h2 class="text-lg font-semibold">Result</h2>
+      </div>
+      <div class="bg-gray-900 rounded-lg p-5 border border-gray-800">
+        <div class="flex flex-col gap-4">
+          <audio id="result-audio" controls class="w-full rounded"></audio>
+          <div class="text-sm text-gray-400" id="result-info"></div>
+          <div class="flex gap-3">
+            <a id="download-link" class="flex-1 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm font-medium text-center transition cursor-pointer">
+              Download WAV
+            </a>
+            <button onclick="generateAnother()" class="flex-1 py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium transition">
+              Generate Another
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Existing Profiles -->
+    <section id="existing-profiles" class="mb-6 hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-gray-400">Existing Profiles</h2>
+        <button onclick="loadProfilesAndSkip()" class="text-sm text-blue-400 hover:text-blue-300 transition">
+          Skip to generate with existing profile
+        </button>
+      </div>
+    </section>
+
+    <!-- Error toast -->
+    <div id="error-toast" class="fixed bottom-4 right-4 max-w-sm bg-red-900 border border-red-700 rounded-lg p-4 text-sm text-red-200 hidden z-50">
+      <div class="flex items-start gap-2">
+        <span class="font-medium">Error:</span>
+        <span id="error-message"></span>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API = window.location.origin;
+
+// State
+let audioFile = null;
+let audioBlob = null;
+let mediaRecorder = null;
+let recordingChunks = [];
+let recordingInterval = null;
+let recordingStart = 0;
+let currentProfile = null;
+let currentGeneration = null;
+
+// ---- Helpers ----
+
+function showError(msg) {
+  const toast = document.getElementById('error-toast');
+  document.getElementById('error-message').textContent = msg;
+  toast.classList.remove('hidden');
+  setTimeout(() => toast.classList.add('hidden'), 6000);
+}
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API + path, options);
+  if (res.status === 202) return { _downloading: true, ...(await res.json()) };
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || JSON.stringify(err));
+  }
+  return res.json();
+}
+
+async function waitForModel(retryFn, statusEl, maxRetries = 120) {
+  for (let i = 0; i < maxRetries; i++) {
+    statusEl.textContent = `Model downloading... (${i * 2}s)`;
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const result = await retryFn();
+      if (!result._downloading) return result;
+    } catch (e) {
+      // Keep waiting
+    }
+  }
+  throw new Error('Model download timed out');
+}
+
+// ---- Step 1: Audio Upload / Record ----
+
+document.getElementById('audio-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  audioFile = file;
+  audioBlob = null;
+  const url = URL.createObjectURL(file);
+  document.getElementById('audio-player').src = url;
+  show('audio-preview');
+  document.getElementById('next-1').disabled = false;
+});
+
+async function toggleRecording() {
+  const btn = document.getElementById('record-btn');
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    btn.textContent = 'Record from microphone';
+    btn.classList.remove('bg-red-600', 'hover:bg-red-500', 'recording-pulse');
+    btn.classList.add('bg-gray-800', 'hover:bg-gray-700');
+    hide('record-timer');
+    clearInterval(recordingInterval);
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordingChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordingChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      audioBlob = new Blob(recordingChunks, { type: mediaRecorder.mimeType });
+      audioFile = new File([audioBlob], 'recording.webm', { type: audioBlob.type });
+      const url = URL.createObjectURL(audioBlob);
+      document.getElementById('audio-player').src = url;
+      show('audio-preview');
+      document.getElementById('next-1').disabled = false;
+    };
+
+    mediaRecorder.start();
+    recordingStart = Date.now();
+    btn.textContent = 'Stop recording';
+    btn.classList.remove('bg-gray-800', 'hover:bg-gray-700');
+    btn.classList.add('bg-red-600', 'hover:bg-red-500', 'recording-pulse');
+    show('record-timer');
+
+    recordingInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - recordingStart) / 1000);
+      document.getElementById('record-timer').textContent =
+        `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+    }, 200);
+  } catch (err) {
+    showError('Microphone access denied. Please allow microphone access.');
+  }
+}
+
+// ---- Step 2: Transcribe ----
+
+async function goToStep2() {
+  show('step-2');
+  show('transcribe-loading');
+  hide('transcribe-result');
+
+  const formData = new FormData();
+  formData.append('file', audioFile);
+
+  const doTranscribe = () => apiFetch('/transcribe', { method: 'POST', body: formData });
+
+  try {
+    let result = await doTranscribe();
+    if (result._downloading) {
+      result = await waitForModel(doTranscribe, document.getElementById('transcribe-status'));
+    }
+    document.getElementById('transcription-text').value = result.text;
+    hide('transcribe-loading');
+    show('transcribe-result');
+  } catch (err) {
+    hide('transcribe-loading');
+    showError('Transcription failed: ' + err.message);
+  }
+}
+
+// ---- Step 3: Create Profile ----
+
+async function goToStep3() {
+  show('step-3');
+  show('profile-form');
+  hide('profile-success');
+  hide('profile-loading');
+}
+
+async function createProfile() {
+  const name = document.getElementById('profile-name').value.trim();
+  if (!name) { showError('Please enter a profile name'); return; }
+
+  const language = document.getElementById('profile-language').value;
+  const referenceText = document.getElementById('transcription-text').value.trim();
+  if (!referenceText) { showError('Transcription text is empty'); return; }
+
+  hide('profile-form');
+  show('profile-loading');
+
+  try {
+    // Create profile
+    const profile = await apiFetch('/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, language }),
+    });
+    currentProfile = profile;
+
+    // Add audio sample with transcription
+    const sampleForm = new FormData();
+    sampleForm.append('file', audioFile);
+    sampleForm.append('reference_text', referenceText);
+    await apiFetch(`/profiles/${profile.id}/samples`, {
+      method: 'POST',
+      body: sampleForm,
+    });
+
+    hide('profile-loading');
+    show('profile-success');
+    document.getElementById('profile-success-name').textContent = `"${name}" - ready to generate`;
+
+    // Move to generation step after a brief pause
+    setTimeout(async () => {
+      await loadProfiles();
+      show('step-4');
+      // Pre-select the newly created profile
+      document.getElementById('gen-profile').value = profile.id;
+      document.getElementById('gen-language').value = language;
+    }, 800);
+  } catch (err) {
+    hide('profile-loading');
+    show('profile-form');
+    showError('Failed to create profile: ' + err.message);
+  }
+}
+
+// ---- Step 4: Generate ----
+
+async function loadProfiles() {
+  try {
+    const profiles = await apiFetch('/profiles');
+    const select = document.getElementById('gen-profile');
+    select.innerHTML = '';
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.language})`;
+      select.appendChild(opt);
+    });
+    return profiles;
+  } catch (err) {
+    showError('Failed to load profiles: ' + err.message);
+    return [];
+  }
+}
+
+async function generate() {
+  const profileId = document.getElementById('gen-profile').value;
+  const text = document.getElementById('gen-text').value.trim();
+  if (!text) { showError('Please enter text to speak'); return; }
+
+  const language = document.getElementById('gen-language').value;
+  const modelSize = document.getElementById('gen-model').value;
+  const instruct = document.getElementById('gen-instruct').value.trim() || undefined;
+
+  document.getElementById('gen-btn').disabled = true;
+  show('gen-loading');
+
+  const body = { profile_id: profileId, text, language, model_size: modelSize };
+  if (instruct) body.instruct = instruct;
+
+  const doGenerate = () => apiFetch('/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  try {
+    let result = await doGenerate();
+    if (result._downloading) {
+      result = await waitForModel(doGenerate, document.getElementById('gen-status'));
+    }
+    currentGeneration = result;
+
+    // Show result
+    hide('gen-loading');
+    document.getElementById('gen-btn').disabled = false;
+    show('step-5');
+
+    document.getElementById('result-audio').src = `${API}/audio/${result.id}`;
+    document.getElementById('result-info').textContent =
+      `Duration: ${result.duration.toFixed(1)}s | Language: ${result.language}` +
+      (result.seed != null ? ` | Seed: ${result.seed}` : '');
+
+    const dl = document.getElementById('download-link');
+    dl.href = `${API}/history/${result.id}/export-audio`;
+    dl.download = `voicebox-${result.id}.wav`;
+  } catch (err) {
+    hide('gen-loading');
+    document.getElementById('gen-btn').disabled = false;
+    showError('Generation failed: ' + err.message);
+  }
+}
+
+function generateAnother() {
+  hide('step-5');
+  document.getElementById('gen-text').value = '';
+  document.getElementById('gen-text').focus();
+}
+
+// ---- Skip to generate with existing profile ----
+
+async function loadProfilesAndSkip() {
+  const profiles = await loadProfiles();
+  if (profiles.length === 0) {
+    showError('No existing profiles found. Create one first.');
+    return;
+  }
+  show('step-4');
+  hide('step-1');
+  hide('step-2');
+  hide('step-3');
+}
+
+// ---- Init ----
+
+async function init() {
+  const statusEl = document.getElementById('server-status');
+  try {
+    const health = await apiFetch('/health');
+    statusEl.textContent = `Server: ${health.status} | GPU: ${health.gpu_available ? health.gpu_type : 'CPU'} | Backend: ${health.backend_type || 'pytorch'}`;
+    statusEl.classList.add(health.gpu_available ? 'text-green-500' : 'text-yellow-500');
+
+    // Check for existing profiles
+    const profiles = await apiFetch('/profiles');
+    if (profiles.length > 0) {
+      show('existing-profiles');
+    }
+  } catch (err) {
+    statusEl.textContent = 'Server unreachable';
+    statusEl.classList.add('text-red-500');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
