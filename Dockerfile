@@ -10,15 +10,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
     python3.12-dev \
-    python3-pip \
+    curl \
     git \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Make python3.12 the default
+# Make python3.12 the default and bootstrap pip via ensurepip
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+    && python3.12 -m ensurepip --upgrade \
+    && python3.12 -m pip install --no-cache-dir --upgrade pip
 
 WORKDIR /app
 
@@ -26,15 +28,14 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/requirements.txt
 
 # Install PyTorch with CUDA 12.4 support (large download, cache this layer)
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir \
-    torch>=2.1.0 --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir \
+    "torch>=2.1.0" --index-url https://download.pytorch.org/whl/cu124
 
 # Install remaining Python dependencies
-RUN python -m pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 # Install qwen-tts from git (not available on PyPI with all features)
-RUN python -m pip install --no-cache-dir git+https://github.com/QwenLM/Qwen3-TTS.git
+RUN pip install --no-cache-dir git+https://github.com/QwenLM/Qwen3-TTS.git
 
 # Copy application code
 COPY backend/ /app/backend/
